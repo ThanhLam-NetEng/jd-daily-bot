@@ -2,12 +2,14 @@ name: Daily JD Fetch
 
 on:
   schedule:
-    - cron: "0 1 * * 1-5" # 8:00 sáng giờ VN (UTC+7), Thứ 2 - Thứ 6
-  workflow_dispatch: # Cho phép chạy tay để test
+    - cron: "0 1 * * 1-5" # 8:00 sáng giờ VN (UTC+7), T2-T6
+  workflow_dispatch:
 
 jobs:
   fetch-jd:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Cho phép commit seen_jobs.json lên repo
 
     steps:
       - name: Checkout repo
@@ -26,3 +28,11 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scripts/fetch_jd.py
+
+      - name: Commit seen jobs (giữ repo active)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/seen_jobs.json
+          git diff --staged --quiet || git commit -m "chore: update seen jobs [skip ci]"
+          git push
