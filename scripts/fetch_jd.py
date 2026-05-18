@@ -38,15 +38,22 @@ def fetch_itviec_jobs(keyword, max_jobs=3):
             # Slug để dedup global
             slug = card.get("data-search--job-selection-job-slug-value", title)
 
-            # Company — lấy attribute title, cắt sau dấu " - " hoặc " | "
+            # Company
             company_tag = card.select_one("a.logo-employer-card")
             if company_tag:
                 raw = company_tag.get("title", "N/A").strip()
-                # Cắt bỏ mô tả dài sau dấu phân cách
-                for sep in [" - ", " | ", " – "]:
+                # Cắt sau các dấu phân cách phổ biến
+                for sep in [" - ", " | ", " – ", ". ", ", "]:
                     if sep in raw:
                         raw = raw.split(sep)[0].strip()
                         break
+                # Fallback: nếu vẫn còn dài quá (mô tả công ty) thì truncate
+                if len(raw) > 40 or raw[0].islower():
+                    # Thử lấy từ href công ty thay thế
+                    href = company_tag.get("href", "")
+                    if "/companies/" in href:
+                        slug = href.split("/companies/")[1].split("?")[0]
+                        raw = slug.replace("-", " ").title()
                 company = raw
             else:
                 company = "N/A"
