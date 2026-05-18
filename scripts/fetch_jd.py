@@ -44,6 +44,9 @@ def fetch_itviec_jobs(keyword, max_jobs=3):
         )
 
         print(f"[{keyword}] Cards found: {len(cards)}")
+        if cards:
+            print(f"[{keyword}] First card HTML:\n{cards[0].prettify()[:2000]}")
+        
 
         for card in cards[:max_jobs]:
             # Tìm title linh hoạt
