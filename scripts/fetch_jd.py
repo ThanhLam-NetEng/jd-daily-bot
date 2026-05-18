@@ -6,7 +6,8 @@ from datetime import datetime
 TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-KEYWORDS = ["devops", "network", "cloud", "aws", "linux", "sysadmin", "infrastructure"]
+# Bỏ sysadmin vì 404, thêm system-engineer
+KEYWORDS = ["devops", "network", "cloud", "aws", "linux", "infrastructure", "system-engineer"]
 
 def fetch_itviec_jobs(keyword, max_jobs=3):
     url = f"https://itviec.com/it-jobs/{keyword}"
@@ -17,62 +18,66 @@ def fetch_itviec_jobs(keyword, max_jobs=3):
 
     try:
         res = requests.get(url, headers=headers, timeout=15)
-        print(f"[{keyword}] Status code: {res.status_code}")
-
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # Debug: in ra các class đang có để xác định đúng selector
-        all_divs = soup.find_all("div", class_=True)
-        classes = set()
-        for d in all_divs[:80]:
-            for c in d.get("class", []):
-                if "job" in c.lower():
-                    classes.add(c)
-        print(f"[{keyword}] Job-related classes found: {classes}")
+        if res.status_code != 200:
+            print(f"[{keyword}] Skipped — status {res.status_code}")
+            return []
+
+        cards = soup.select("div.job-card")
+        print(f"[{keyword}] Cards found: {len(cards)}")
 
         jobs = []
+        seen_slugs = set()
 
-        # Thử nhiều selector phổ biến của ITviec
-        cards = (
-            soup.select("div.job-card")
-            or soup.select("div[data-job-id]")
-            or soup.select("article.job")
-            or soup.select("div.job_content")
-            or soup.select("div.job-listing")
-            or soup.select("div[class*='JobCard']")
-            or soup.select("div[class*='job-item']")
-        )
-
-        print(f"[{keyword}] Cards found: {len(cards)}")
-        if cards:
-            print(f"[{keyword}] First card HTML:\n{cards[0].prettify()[:2000]}")
-        
-
-        for card in cards[:max_jobs]:
-            # Tìm title linh hoạt
-            title_tag = (
-                card.select_one("h3 a")
-                or card.select_one("h2 a")
-                or card.select_one("a[class*='title']")
-                or card.select_one("a[class*='job']")
-            )
-            company_tag  = card.select_one("a[class*='company']") or card.select_one("span[class*='company']")
-            location_tag = card.select_one("span[class*='location']") or card.select_one("div[class*='location']")
-            salary_tag   = card.select_one("span[class*='salary']") or card.select_one("div[class*='salary']")
-
+        for card in cards:
+            # Title + Link
+            title_tag = card.select_one("h3[data-search--job-selection-target='jobTitle']")
             if not title_tag:
                 continue
 
-            href = title_tag.get("href", "")
-            link = href if href.startswith("http") else "https://itviec.com" + href
+            title = title_tag.text.strip()
+            link  = title_tag.get("data-url", "")
+            if not link.startswith("http"):
+                link = "https://itviec.com" + link
+
+            # Dedup theo slug
+            slug = card.get("data-search--job-selection-job-slug-value", title)
+            if slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
+
+            # Company
+            company_tag = card.select_one("a.logo-employer-card")
+            company = company_tag.get("title", "N/A").strip() if company_tag else "N/A"
+
+            # Location
+            location_tag = card.select_one("svg[class*='location'] ~ span") \
+                        or card.select_one("span[class*='location']") \
+                        or card.select_one("div[class*='location']")
+            location = location_tag.text.strip() if location_tag else "Vietnam"
+
+            # Salary
+            salary_tag = card.select_one("span[class*='salary']") \
+                      or card.select_one("div[class*='salary']") \
+                      or card.select_one("span[class*='sign-in-view-salary']")
+            salary = salary_tag.text.strip() if salary_tag else "Thoả thuận"
+
+            # Posted time
+            posted_tag = card.select_one("span.small-text.text-dark-grey")
+            posted = posted_tag.text.strip().replace("\n", " ") if posted_tag else ""
 
             jobs.append({
-                "title":    title_tag.text.strip(),
-                "company":  company_tag.text.strip()  if company_tag  else "N/A",
-                "location": location_tag.text.strip() if location_tag else "N/A",
-                "salary":   salary_tag.text.strip()   if salary_tag   else "Thoả thuận",
-                "link":     link,
+                "title":   title,
+                "company": company,
+                "location": location,
+                "salary":  salary,
+                "posted":  posted,
+                "link":    link,
             })
+
+            if len(jobs) >= max_jobs:
+                break
 
         return jobs
 
@@ -109,15 +114,17 @@ def main():
                 f"<b>{i}. {job['title']}</b>\n"
                 f"🏢 {job['company']}\n"
                 f"📍 {job['location']}  💰 {job['salary']}\n"
+                f"🕐 {job['posted']}\n"
                 f"🔗 <a href='{job['link']}'>Xem JD</a>\n\n"
             )
         total += len(jobs)
 
     if total == 0:
-        message += "⚠️ Không scrape được job — có thể ITviec đã thay đổi HTML.\n"
-        message += "Kiểm tra log trong GitHub Actions để debug."
+        message += "⚠️ Không tìm thấy job nào hôm nay."
+    else:
+        message += f"📊 <i>Tổng: {total} jobs từ {len(KEYWORDS)} từ khoá</i>\n"
 
-    message += f"\n<i>🤖 Bot tự động chạy lúc 8h sáng</i>"
+    message += f"<i>🤖 Bot tự động — 8h sáng mỗi ngày</i>"
     send_telegram(message)
 
 
