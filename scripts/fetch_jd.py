@@ -119,6 +119,10 @@ def fetch_itviec_jobs(keyword, max_jobs=5):
 
             slug = card.get("data-search--job-selection-job-slug-value", title)
 
+            # Lấy posted time TRƯỚC khi filter
+            posted_tag = card.select_one("span.small-text.text-dark-grey")
+            posted = posted_tag.text.strip().replace("\n", " ") if posted_tag else ""
+
             # Filter 1: Loại senior/lead
             if is_senior_job(title):
                 print(f"  ⛔ Skip senior: {title}")
@@ -155,10 +159,6 @@ def fetch_itviec_jobs(keyword, max_jobs=5):
                 company = raw
             else:
                 company = "N/A"
-
-            # Posted time
-            posted_tag = card.select_one("span.small-text.text-dark-grey")
-            posted = posted_tag.text.strip().replace("\n", " ") if posted_tag else ""
 
             jobs.append({
                 "title":   title,
