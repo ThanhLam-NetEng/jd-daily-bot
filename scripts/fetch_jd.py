@@ -6,8 +6,7 @@ from datetime import datetime
 TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-# Bỏ sysadmin vì 404, thêm system-engineer
-KEYWORDS = ["devops", "network", "cloud", "aws", "linux", "infrastructure", "system-engineer"]
+KEYWORDS = ["devops", "network", "cloud", "linux", "infrastructure"]
 
 def fetch_itviec_jobs(keyword, max_jobs=3):
     url = f"https://itviec.com/it-jobs/{keyword}"
@@ -18,18 +17,13 @@ def fetch_itviec_jobs(keyword, max_jobs=3):
 
     try:
         res = requests.get(url, headers=headers, timeout=15)
-        soup = BeautifulSoup(res.text, "html.parser")
-
         if res.status_code != 200:
-            print(f"[{keyword}] Skipped — status {res.status_code}")
             return []
 
+        soup = BeautifulSoup(res.text, "html.parser")
         cards = soup.select("div.job-card")
-        print(f"[{keyword}] Cards found: {len(cards)}")
 
         jobs = []
-        seen_slugs = set()
-
         for card in cards:
             # Title + Link
             title_tag = card.select_one("h3[data-search--job-selection-target='jobTitle']")
@@ -41,27 +35,21 @@ def fetch_itviec_jobs(keyword, max_jobs=3):
             if not link.startswith("http"):
                 link = "https://itviec.com" + link
 
-            # Dedup theo slug
+            # Slug để dedup global
             slug = card.get("data-search--job-selection-job-slug-value", title)
-            if slug in seen_slugs:
-                continue
-            seen_slugs.add(slug)
 
-            # Company
+            # Company — lấy attribute title, cắt sau dấu " - " hoặc " | "
             company_tag = card.select_one("a.logo-employer-card")
-            company = company_tag.get("title", "N/A").strip() if company_tag else "N/A"
-
-            # Location
-            location_tag = card.select_one("svg[class*='location'] ~ span") \
-                        or card.select_one("span[class*='location']") \
-                        or card.select_one("div[class*='location']")
-            location = location_tag.text.strip() if location_tag else "Vietnam"
-
-            # Salary
-            salary_tag = card.select_one("span[class*='salary']") \
-                      or card.select_one("div[class*='salary']") \
-                      or card.select_one("span[class*='sign-in-view-salary']")
-            salary = salary_tag.text.strip() if salary_tag else "Thoả thuận"
+            if company_tag:
+                raw = company_tag.get("title", "N/A").strip()
+                # Cắt bỏ mô tả dài sau dấu phân cách
+                for sep in [" - ", " | ", " – "]:
+                    if sep in raw:
+                        raw = raw.split(sep)[0].strip()
+                        break
+                company = raw
+            else:
+                company = "N/A"
 
             # Posted time
             posted_tag = card.select_one("span.small-text.text-dark-grey")
@@ -70,8 +58,7 @@ def fetch_itviec_jobs(keyword, max_jobs=3):
             jobs.append({
                 "title":   title,
                 "company": company,
-                "location": location,
-                "salary":  salary,
+                "slug":    slug,
                 "posted":  posted,
                 "link":    link,
             })
@@ -102,22 +89,33 @@ def main():
     today   = datetime.now().strftime("%d/%m/%Y")
     message = f"☀️ <b>JD sáng nay — {today}</b>\n{'─'*30}\n\n"
 
-    total = 0
+    total     = 0
+    seen_slugs = set()  # Dedup toàn bộ across keywords
+
     for kw in KEYWORDS:
-        jobs = fetch_itviec_jobs(kw, max_jobs=3)
-        if not jobs:
+        jobs = fetch_itviec_jobs(kw, max_jobs=5)  # Lấy 5 để sau dedup còn đủ 3
+
+        # Lọc duplicate
+        unique_jobs = []
+        for job in jobs:
+            if job["slug"] not in seen_slugs:
+                seen_slugs.add(job["slug"])
+                unique_jobs.append(job)
+            if len(unique_jobs) >= 3:
+                break
+
+        if not unique_jobs:
             continue
 
         message += f"🔍 <b>#{kw.upper()}</b>\n\n"
-        for i, job in enumerate(jobs, 1):
+        for i, job in enumerate(unique_jobs, 1):
             message += (
                 f"<b>{i}. {job['title']}</b>\n"
                 f"🏢 {job['company']}\n"
-                f"📍 {job['location']}  💰 {job['salary']}\n"
                 f"🕐 {job['posted']}\n"
                 f"🔗 <a href='{job['link']}'>Xem JD</a>\n\n"
             )
-        total += len(jobs)
+        total += len(unique_jobs)
 
     if total == 0:
         message += "⚠️ Không tìm thấy job nào hôm nay."
