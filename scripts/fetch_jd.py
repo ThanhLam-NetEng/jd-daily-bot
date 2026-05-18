@@ -13,13 +13,22 @@ KEYWORDS = ["devops", "network", "cloud", "linux", "infrastructure"]
 SENIOR_KEYWORDS = [
     "senior", "sr.", "lead", "leader", "manager", "principal",
     "head of", "director", "architect", "vp ", "vice president",
-    "staff engineer", "cto", "chief"
+    "staff engineer", "cto", "chief", "middle", "engineer ii",
+    "engineer iii", "level 2", "level 3"
 ]
 
 # Từ khoá địa điểm HCM hợp lệ
 HCM_KEYWORDS = [
     "ho chi minh", "hồ chí minh", "hcm", "district",
     "quan ", "quận", "binh thanh", "thu duc", "thu đức"
+]
+
+IRRELEVANT_KEYWORDS = [
+    "embedded", "autosar", "automotive", "mobile developer",
+    "android", "ios", "flutter", "react native", "frontend",
+    "backend developer", "java developer", "php", ".net developer",
+    "data scientist", "machine learning", "ai engineer",
+    "game developer", "unity", "blockchain developer"
 ]
 
 SEEN_JOBS_FILE = "data/seen_jobs.json"
@@ -48,6 +57,22 @@ def is_senior_job(title: str) -> bool:
     title_lower = title.lower()
     return any(kw in title_lower for kw in SENIOR_KEYWORDS)
 
+def is_irrelevant_job(title: str) -> bool:
+    title_lower = title.lower()
+    return any(kw in title_lower for kw in IRRELEVANT_KEYWORDS)
+
+def is_too_old(posted_text: str, max_days: int = 21) -> bool:
+    """Loại job đăng quá lâu — mặc định 21 ngày."""
+    text = posted_text.lower()
+    try:
+        if "hour" in text or "minute" in text or "just now" in text:
+            return False
+        if "day" in text:
+            days = int(''.join(filter(str.isdigit, text)))
+            return days > max_days
+    except Exception:
+        pass
+    return False
 
 def is_hcm_job(card) -> bool:
     """Kiểm tra job có ở HCM không — qua text trong card."""
@@ -99,7 +124,17 @@ def fetch_itviec_jobs(keyword, max_jobs=5):
                 print(f"  ⛔ Skip senior: {title}")
                 continue
 
-            # Filter 2: Chỉ lấy HCM
+            # Filter 2: Loại job không liên quan
+            if is_irrelevant_job(title):
+                print(f"  ⛔ Skip irrelevant: {title}")
+                continue
+
+            # Filter 3: Loại job quá cũ (> 21 ngày)
+            if is_too_old(posted):
+                print(f"  ⛔ Skip old job: {title} ({posted})")
+                continue
+
+            # Filter : Chỉ lấy HCM
             if not is_hcm_job(card):
                 print(f"  ⛔ Skip non-HCM: {title}")
                 continue
