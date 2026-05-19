@@ -3,10 +3,11 @@
 [![Daily JD Fetch](https://github.com/ThanhLam-NetEng/jd-daily-bot/actions/workflows/fetch_jd.yml/badge.svg)](https://github.com/ThanhLam-NetEng/jd-daily-bot/actions/workflows/fetch_jd.yml)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/Automation-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)
+![Claude](https://img.shields.io/badge/AI-Claude%20Haiku%204.5-D97757)
 ![Telegram](https://img.shields.io/badge/Delivery-Telegram-26A5E4?logo=telegram&logoColor=white)
 ![Schedule](https://img.shields.io/badge/Schedule-08%3A07%20VN%20Mon--Fri-success)
 
-Automated job digest for fresher-friendly IT roles in Ho Chi Minh City. The bot fetches matching JD listings from ITviec, filters out senior or unrelated roles, optionally scores each JD against a CV with Claude, sends a clean Telegram digest every weekday morning, and remembers recently sent jobs to avoid duplicates.
+AI-assisted job matching bot for fresher-friendly IT roles in Ho Chi Minh City. The bot fetches ITviec job listings, filters noisy results, reads full JD pages, optionally scores each JD against a private CV with Claude, and sends a concise Telegram digest every weekday morning.
 
 ## Demo
 
@@ -14,51 +15,81 @@ Automated job digest for fresher-friendly IT roles in Ho Chi Minh City. The bot 
 
 ## Why This Project Matters
 
-This is a small but production-minded automation project. It shows practical DevOps habits: scheduled workflows, secret-based configuration, failure visibility, retry handling, state persistence, and clean operational documentation.
+This project is built like a small production automation system, not a one-off script. It combines scheduled CI, web scraping, rule-based filtering, LLM-based JD/CV matching, private secret management, state persistence, and failure-aware Telegram delivery.
 
 ## Features
 
-- Scheduled weekday digest at **08:07 Vietnam time**.
-- Keyword-based ITviec search for `devops`, `network`, `cloud`, `linux`, and `infrastructure`.
-- HCM-focused filtering with senior, irrelevant-role, and high-experience exclusion.
-- Digest fields include company, normalized location, salary, matched keywords, posted time, and JD link.
-- Optional Claude-powered CV matching with score, key skills, strengths, gaps, level, and verdict.
-- Telegram delivery with HTML escaping, rate-limit retry, and visible failure logs.
-- Duplicate prevention through `data/seen_jobs.json`.
-- Manual workflow trigger for testing or ad-hoc runs.
+- Runs automatically at **08:07 Vietnam time, Monday to Friday**.
+- Searches ITviec for DevOps, Network, Cloud, Linux, and Infrastructure roles.
+- Filters by location, seniority, relevance, posting age, duplicate history, and experience requirements.
+- Fetches full JD pages to catch requirements that are not visible in search cards.
+- Uses Claude Haiku 4.5 to score JD/CV fit when `ANTHROPIC_API_KEY` and `CV_TEXT` are configured.
+- Sends Telegram digest with match score, required skills, fit, gap, experience level, verdict, posted time, and JD link.
+- Falls back to a rule-based digest if Claude is not configured or the API call fails.
+- Updates `data/seen_jobs.json` only after Telegram delivery succeeds.
 
-## Filtering Strategy
+## Output
 
-The bot keeps the digest focused by filtering in multiple passes:
+With Claude enabled, each item is formatted like this:
 
-| Filter | Purpose |
-| --- | --- |
-| Keyword search | Starts from DevOps, Network, Cloud, Linux, and Infrastructure roles. |
-| Location filter | Prioritizes HCM listings and removes clearly non-HCM results. |
-| Seniority filter | Removes senior, lead, manager, architect, staff, and similar titles. |
-| Experience filter | Removes postings that clearly require more than 2 years, such as `3+ years`, `3-5 years`, `at least 3 years`, or `tu 3 nam`. |
-| Relevance filter | Removes unrelated tracks such as mobile, frontend, embedded, AI/ML, blockchain, and game roles. |
-| Deduplication | Skips jobs already sent in the last 7 days. |
+```text
+1. Network - Hardware Engineer (Firewall, Window Server)
+Company: Allexceed Viet Nam
+Match: 72% [███████░░░]
+Skills: Firewall Configuration, Network Engineering, Windows Server
+Fit: Strong firewall and network security project experience.
+Gap: No explicit Windows Server administration experience.
+Level: fresher-friendly · Worth applying
+Posted: 13 days ago
+Link: Xem JD
+```
+
+Without Claude, the bot still sends a deterministic rule-based summary:
+
+```text
+Company: ...
+Location: Ho Chi Minh
+Salary: ...
+Matched: NETWORK, Firewall
+Posted: ...
+Link: Xem JD
+```
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-    A[GitHub Actions Schedule<br/>08:07 VN, Mon-Fri] --> B[Python Fetcher<br/>scripts/fetch_jd.py]
-    B --> C[ITviec Search Pages]
-    C --> D[Parse Cards and Detail Pages]
-    D --> E[Filter Location, Seniority,<br/>Experience, and Relevance]
-    E --> F[Deduplicate Against<br/>data/seen_jobs.json]
-    F --> G{Claude CV Match<br/>enabled?}
-    G -->|Yes| H[Analyze JD vs CV<br/>Claude Messages API]
-    G -->|No| I[Use Rule-Based Summary]
-    H --> J[Format Telegram Digest<br/>Score, Skills, Fit, Gap, Verdict]
-    I --> J
-    J --> K[Telegram Bot API]
-    K --> L[Telegram Chat]
-    J --> M[Update seen_jobs.json]
-    M --> N[Commit State Back<br/>to GitHub]
+flowchart TD
+    A[GitHub Actions<br/>schedule + manual dispatch] --> B[Install dependencies]
+    B --> C[Run scripts/fetch_jd.py]
+    C --> D[Fetch ITviec search cards]
+    D --> E[Parse title, company, posted time, link]
+    E --> F[Rule filters<br/>location, seniority, relevance, age]
+    F --> G[Fetch full JD detail page]
+    G --> H[Experience filter<br/>EN + VI patterns]
+    H --> I[Deduplicate with seen_jobs.json]
+    I --> J{Claude enabled?}
+    J -->|Yes| K[Claude Messages API<br/>JD + CV -> JSON analysis]
+    J -->|No| L[Rule-based summary]
+    K --> M[Score threshold filter]
+    L --> N[Telegram formatter]
+    M --> N
+    N --> O[Telegram Bot API]
+    O --> P[Telegram chat]
+    P --> Q[Persist seen_jobs.json]
+    Q --> R[Commit state back to GitHub]
 ```
+
+## Filtering Strategy
+
+| Layer | Purpose |
+| --- | --- |
+| Keyword search | Starts from `devops`, `network`, `cloud`, `linux`, and `infrastructure`. |
+| Location filter | Keeps HCM-focused listings and removes clearly non-HCM results. |
+| Seniority filter | Removes senior, lead, manager, architect, staff, and similar titles. |
+| Experience filter | Removes postings that clearly require more than 2 years, including English and Vietnamese patterns. |
+| Relevance filter | Removes unrelated tracks such as mobile, frontend, embedded, AI/ML, blockchain, and game roles. |
+| Claude threshold | When enabled, sends only jobs with `match_score >= 60`. |
+| Deduplication | Skips jobs already sent in the last 7 days. |
 
 ## Repository Structure
 
@@ -66,7 +97,9 @@ flowchart LR
 .
 |-- .github/workflows/fetch_jd.yml   # Scheduled GitHub Actions workflow
 |-- data/seen_jobs.json              # Lightweight state for duplicate prevention
-|-- scripts/fetch_jd.py              # Fetch, filter, format, and send logic
+|-- docs/demo.PNG                    # Telegram demo screenshot
+|-- docs/demo-placeholder.svg        # Earlier placeholder asset
+|-- scripts/fetch_jd.py              # Fetch, filter, analyze, format, and send logic
 |-- requirements.txt                 # Python dependencies
 |-- .gitignore                       # Local/cache file exclusions
 `-- README.md                        # Project documentation
@@ -80,7 +113,7 @@ Add these repository secrets before running the workflow:
 | --- | --- | --- |
 | `TELEGRAM_TOKEN` | Yes | Telegram bot token from BotFather. |
 | `TELEGRAM_CHAT_ID` | Yes | Telegram chat, group, or channel ID that receives the digest. |
-| `ANTHROPIC_API_KEY` | No | Enables Claude-powered JD vs CV matching. |
+| `ANTHROPIC_API_KEY` | No | Enables Claude-powered JD/CV matching. |
 | `CV_TEXT` | No | Plain-text CV used for Claude matching. Keep this private in GitHub Secrets. |
 | `CLAUDE_MODEL` | No | Optional model override. Defaults to `claude-haiku-4-5-20251001`. |
 
@@ -102,8 +135,6 @@ That maps to **08:07 Vietnam time, Monday to Friday**. The minute is intentional
 
 ## Local Setup
 
-Clone the repository and install dependencies:
-
 ```bash
 git clone https://github.com/ThanhLam-NetEng/jd-daily-bot.git
 cd jd-daily-bot
@@ -124,13 +155,21 @@ pip install -r requirements.txt
 
 ## Run Locally
 
-Linux/macOS:
+Rule-based mode:
 
 ```bash
 export TELEGRAM_TOKEN="your-token"
 export TELEGRAM_CHAT_ID="your-chat-id"
-export ANTHROPIC_API_KEY="your-anthropic-key" # optional
-export CV_TEXT="your plain-text CV" # optional
+python scripts/fetch_jd.py
+```
+
+Claude matching mode:
+
+```bash
+export TELEGRAM_TOKEN="your-token"
+export TELEGRAM_CHAT_ID="your-chat-id"
+export ANTHROPIC_API_KEY="your-anthropic-key"
+export CV_TEXT="your plain-text CV"
 python scripts/fetch_jd.py
 ```
 
@@ -139,8 +178,8 @@ Windows PowerShell:
 ```powershell
 $env:TELEGRAM_TOKEN="your-token"
 $env:TELEGRAM_CHAT_ID="your-chat-id"
-$env:ANTHROPIC_API_KEY="your-anthropic-key" # optional
-$env:CV_TEXT="your plain-text CV" # optional
+$env:ANTHROPIC_API_KEY="your-anthropic-key"
+$env:CV_TEXT="your plain-text CV"
 python scripts/fetch_jd.py
 ```
 
@@ -152,26 +191,29 @@ Use GitHub Actions when you want to test the live workflow:
 Actions -> Daily JD Fetch -> Run workflow
 ```
 
-## Reliability Notes
+## Reliability
 
 - Telegram responses are checked. Failed sends make the workflow fail instead of silently passing.
 - Telegram HTML content is escaped before sending to avoid malformed message errors.
-- Rate-limit responses are retried.
-- ITviec detail pages are checked when available so experience requirements hidden outside the search card can still be filtered.
+- Telegram rate-limit responses are retried.
+- Claude output is requested as raw JSON and parsed before formatting.
 - Claude matching is capped per run to control API cost and latency.
 - If Claude is not configured or returns an error, the bot falls back to the rule-based digest.
 - `seen_jobs.json` is updated only after Telegram delivery succeeds.
 - The workflow has a 20-minute timeout and concurrency control to avoid overlapping runs.
 
-## Security Notes
+## Security And Cost
 
-- Telegram credentials are read from GitHub Actions secrets.
-- Claude API keys and CV text are read from GitHub Actions secrets and are never committed.
+- Telegram credentials, Claude API key, and CV text are read from GitHub Actions secrets.
+- CV content is not committed to the repository.
 - Local `.env` files and virtual environments are ignored by Git.
 - `data/seen_jobs.json` is intentionally versioned because it is workflow state, not a secret.
+- Claude analysis is limited by `MAX_ANALYZE` in code to avoid accidental high API usage.
 
 ## Roadmap
 
-- Add unit tests for filtering and message formatting.
-- Add structured logging for fetch, filter, send, and state-update steps.
-- Add a dry-run mode for local validation without sending Telegram messages.
+- Add unit tests for experience filtering, Claude JSON parsing, and Telegram formatting.
+- Add a dry-run mode that prints the digest without sending Telegram messages.
+- Move tunables such as match threshold, max analysis count, and keywords to environment variables.
+- Store historical match scores for trend review.
+- Add structured logs for fetch, filter, Claude analysis, send, and state-update steps.
