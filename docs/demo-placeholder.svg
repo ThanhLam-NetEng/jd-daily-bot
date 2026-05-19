@@ -1,0 +1,25 @@
+<svg width="1200" height="720" viewBox="0 0 1200 720" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Telegram digest preview placeholder</title>
+  <desc id="desc">A clean placeholder preview for the JD Daily Bot Telegram message.</desc>
+  <rect width="1200" height="720" fill="#F4F7FB"/>
+  <rect x="260" y="72" width="680" height="576" rx="24" fill="#FFFFFF" stroke="#D9E2EC" stroke-width="2"/>
+  <rect x="260" y="72" width="680" height="72" rx="24" fill="#229ED9"/>
+  <path d="M260 120H940V144H260V120Z" fill="#229ED9"/>
+  <circle cx="310" cy="108" r="18" fill="#FFFFFF" fill-opacity="0.9"/>
+  <text x="344" y="116" fill="#FFFFFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700">JD Daily Bot</text>
+  <text x="308" y="184" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="26" font-weight="700">JD HCM - DD/MM/YYYY</text>
+  <line x1="308" y1="214" x2="892" y2="214" stroke="#E5E7EB" stroke-width="2"/>
+  <text x="308" y="258" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20" font-weight="700">DEVOPS</text>
+  <rect x="308" y="282" width="584" height="110" rx="12" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="332" y="318" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">1. Junior DevOps Engineer</text>
+  <text x="332" y="350" fill="#374151" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16">Company: Example Tech</text>
+  <text x="332" y="376" fill="#374151" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16">Posted: 2 days ago</text>
+  <text x="704" y="376" fill="#0E7490" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="700">Xem JD</text>
+  <text x="308" y="438" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20" font-weight="700">CLOUD</text>
+  <rect x="308" y="462" width="584" height="110" rx="12" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="332" y="498" fill="#111827" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">1. Cloud Support Engineer</text>
+  <text x="332" y="530" fill="#374151" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16">Company: Infrastructure Labs</text>
+  <text x="332" y="556" fill="#374151" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16">Posted: 1 day ago</text>
+  <text x="704" y="556" fill="#0E7490" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="700">Xem JD</text>
+  <text x="308" y="616" fill="#6B7280" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16">Daily JD Fetch | 08:07 | T2-T6</text>
+</svg>
