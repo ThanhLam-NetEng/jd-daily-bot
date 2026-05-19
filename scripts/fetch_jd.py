@@ -260,8 +260,8 @@ def main():
 
     print(f"Loaded {len(seen_slugs)} seen slugs from history")
 
-    header = f"☀️ <b>JD HCM sáng nay - {today}</b>\n{'─' * 30}\n\n"
-    footer = "<i>🤖 Bot tự động - 08:07 sáng T2-T6</i>"
+    header = f"<b>JD HCM - {today}</b>\n{'─' * 30}\n\n"
+    footer = "<i>Daily JD Fetch · 08:07 · T2-T6</i>"
     sections = []
     fetch_errors = []
     total = 0
@@ -290,13 +290,13 @@ def main():
         if not unique_jobs:
             continue
 
-        section = f"🔍 <b>#{esc_text(kw.upper())}</b>\n\n"
+        section = f"<b>{esc_text(kw.upper())}</b>\n\n"
         for i, job in enumerate(unique_jobs, 1):
             section += (
                 f"<b>{i}. {esc_text(job['title'])}</b>\n"
-                f"🏢 {esc_text(job['company'])}\n"
-                f"🕐 {esc_text(job['posted'])}\n"
-                f"🔗 <a href=\"{esc_attr(job['link'])}\">Xem JD</a>\n\n"
+                f"Company: {esc_text(job['company'])}\n"
+                f"Posted: {esc_text(job['posted'])}\n"
+                f"Link: <a href=\"{esc_attr(job['link'])}\">Xem JD</a>\n\n"
             )
             new_seen.append({
                 "slug": job["slug"],
@@ -307,13 +307,13 @@ def main():
         total += len(unique_jobs)
 
     if total == 0:
-        sections.append("✅ Không có job mới hôm nay - tất cả đã gửi rồi!\n\n")
+        sections.append("Không có JD mới phù hợp hôm nay.\n\n")
     else:
-        sections.append(f"📊 <i>Tổng: {total} jobs mới · HCM only · Fresher-friendly</i>\n")
+        sections.append(f"<i>Total: {total} JD mới · HCM · Fresher-friendly</i>\n")
 
     if fetch_errors:
         sections.append(
-            "\n⚠️ <b>Lỗi fetch cần kiểm tra</b>\n"
+            "\n<b>Cần kiểm tra nguồn fetch</b>\n"
             + "\n".join(fetch_errors)
             + "\n\n"
         )
