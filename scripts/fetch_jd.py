@@ -15,6 +15,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 CV_TEXT = os.environ.get("CV_TEXT", "")
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+DRY_RUN = os.environ.get("DRY_RUN", "").lower() in {"1", "true", "yes", "on"}
 MATCH_THRESHOLD = 60
 MAX_ANALYZE = 8
 
@@ -65,6 +66,9 @@ def now_vn():
 
 
 def require_env():
+    if DRY_RUN:
+        return
+
     missing = [
         name for name, value in {
             "TELEGRAM_TOKEN": TELEGRAM_TOKEN,
@@ -462,6 +466,38 @@ def split_messages(header, sections, footer):
     return messages
 
 
+def format_rule_job(job, index):
+    return (
+        f"<b>{index}. {esc_text(job['title'])}</b>\n"
+        f"Company: {esc_text(job['company'])}\n"
+        f"Location: {esc_text(job['location'])}\n"
+        f"Salary: {esc_text(job['salary'])}\n"
+        f"Matched: {esc_text(job['matches'])}\n"
+        f"Posted: {esc_text(job['posted'])}\n"
+        f"Link: <a href=\"{esc_attr(job['link'])}\">Xem JD</a>\n\n"
+    )
+
+
+def format_ai_job(job, analysis, index):
+    score = analysis.get("match_score", 0)
+    filled = round(score / 10)
+    bar = "█" * filled + "░" * (10 - filled)
+    skills = ", ".join(analysis.get("required_skills", [])) or "N/A"
+    level = analysis.get("experience_level", "")
+    verdict = analysis.get("verdict", "")
+    return (
+        f"<b>{index}. {esc_text(job['title'])}</b>\n"
+        f"Company: {esc_text(job['company'])}\n"
+        f"Match: {score}% [{bar}]\n"
+        f"Skills: {esc_text(skills)}\n"
+        f"Fit: {esc_text(analysis.get('strength', ''))}\n"
+        f"Gap: {esc_text(analysis.get('gap', ''))}\n"
+        f"Level: {esc_text(level)} · {esc_text(verdict)}\n"
+        f"Posted: {esc_text(job['posted'])}\n"
+        f"Link: <a href=\"{esc_attr(job['link'])}\">Xem JD</a>\n\n"
+    )
+
+
 def main():
     require_env()
 
@@ -470,6 +506,7 @@ def main():
     seen_slugs = {j["slug"] for j in seen_jobs if "slug" in j}
 
     print(f"Loaded {len(seen_slugs)} seen slugs from history")
+    print(f"Dry run: {'ON' if DRY_RUN else 'OFF'}")
 
     header = f"<b>JD HCM - {today}</b>\n{'─' * 30}\n\n"
     footer = "<i>Daily JD Fetch · 08:07 · T2-T6</i>"
@@ -575,7 +612,15 @@ def main():
             + "\n\n"
         )
 
-    for message in split_messages(header, sections, footer):
+    messages = split_messages(header, sections, footer)
+
+    if DRY_RUN:
+        print("DRY_RUN enabled: not sending Telegram and not updating seen jobs.")
+        for index, message in enumerate(messages, 1):
+            print(f"\n--- DRY RUN MESSAGE {index} ---\n{message}")
+        return
+
+    for message in messages:
         send_telegram(message)
 
     all_seen = seen_jobs + new_seen

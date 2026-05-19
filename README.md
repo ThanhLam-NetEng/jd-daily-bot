@@ -3,6 +3,7 @@
 [![Daily JD Fetch](https://github.com/ThanhLam-NetEng/jd-daily-bot/actions/workflows/fetch_jd.yml/badge.svg)](https://github.com/ThanhLam-NetEng/jd-daily-bot/actions/workflows/fetch_jd.yml)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/Automation-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-pytest-0A9EDC)
 ![Claude](https://img.shields.io/badge/AI-Claude%20Haiku%204.5-D97757)
 ![Telegram](https://img.shields.io/badge/Delivery-Telegram-26A5E4?logo=telegram&logoColor=white)
 ![Schedule](https://img.shields.io/badge/Schedule-08%3A07%20VN%20Mon--Fri-success)
@@ -26,6 +27,8 @@ This project is built like a small production automation system, not a one-off s
 - Uses Claude Haiku 4.5 to score JD/CV fit when `ANTHROPIC_API_KEY` and `CV_TEXT` are configured.
 - Sends Telegram digest with match score, required skills, fit, gap, experience level, verdict, posted time, and JD link.
 - Falls back to a rule-based digest if Claude is not configured or the API call fails.
+- Supports `DRY_RUN=1` for safe local validation without Telegram delivery or state updates.
+- Includes pytest coverage and a dedicated CI workflow for compile/test checks.
 - Updates `data/seen_jobs.json` only after Telegram delivery succeeds.
 
 ## Output
@@ -96,6 +99,7 @@ flowchart TD
 ```text
 .
 |-- .github/workflows/fetch_jd.yml   # Scheduled GitHub Actions workflow
+|-- .github/workflows/test.yml       # CI workflow for compile and pytest checks
 |-- data/seen_jobs.json              # Lightweight state for duplicate prevention
 |-- docs/demo.PNG                    # Telegram demo screenshot
 |-- docs/demo-placeholder.svg        # Earlier placeholder asset
@@ -163,6 +167,15 @@ export TELEGRAM_CHAT_ID="your-chat-id"
 python scripts/fetch_jd.py
 ```
 
+Dry-run mode:
+
+```bash
+export DRY_RUN=1
+export TELEGRAM_TOKEN="placeholder"
+export TELEGRAM_CHAT_ID="placeholder"
+python scripts/fetch_jd.py
+```
+
 Claude matching mode:
 
 ```bash
@@ -191,6 +204,16 @@ Use GitHub Actions when you want to test the live workflow:
 Actions -> Daily JD Fetch -> Run workflow
 ```
 
+## Tests
+
+Run the local test suite:
+
+```bash
+pytest -q
+```
+
+The `Tests` GitHub Actions workflow runs on pushes, pull requests, and manual dispatches. It compiles `scripts/fetch_jd.py` and runs the pytest suite.
+
 ## Reliability
 
 - Telegram responses are checked. Failed sends make the workflow fail instead of silently passing.
@@ -199,6 +222,7 @@ Actions -> Daily JD Fetch -> Run workflow
 - Claude output is requested as raw JSON and parsed before formatting.
 - Claude matching is capped per run to control API cost and latency.
 - If Claude is not configured or returns an error, the bot falls back to the rule-based digest.
+- Dry-run mode skips Telegram delivery and `seen_jobs.json` updates.
 - `seen_jobs.json` is updated only after Telegram delivery succeeds.
 - The workflow has a 20-minute timeout and concurrency control to avoid overlapping runs.
 
@@ -212,8 +236,6 @@ Actions -> Daily JD Fetch -> Run workflow
 
 ## Roadmap
 
-- Add unit tests for experience filtering, Claude JSON parsing, and Telegram formatting.
-- Add a dry-run mode that prints the digest without sending Telegram messages.
 - Move tunables such as match threshold, max analysis count, and keywords to environment variables.
 - Store historical match scores for trend review.
 - Add structured logs for fetch, filter, Claude analysis, send, and state-update steps.
