@@ -82,6 +82,7 @@ Add these repository secrets before running the workflow:
 | `TELEGRAM_CHAT_ID` | Yes | Telegram chat, group, or channel ID that receives the digest. |
 | `ANTHROPIC_API_KEY` | No | Enables Claude-powered JD vs CV matching. |
 | `CV_TEXT` | No | Plain-text CV used for Claude matching. Keep this private in GitHub Secrets. |
+| `CLAUDE_MODEL` | No | Optional model override. Defaults to `claude-haiku-4-5-20251001`. |
 
 GitHub path:
 
