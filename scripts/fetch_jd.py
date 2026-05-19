@@ -1,6 +1,7 @@
 import html
 import json
 import os
+import re
 import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -41,10 +42,17 @@ IRRELEVANT_KEYWORDS = [
     "game developer", "unity", "blockchain developer",
 ]
 
+SKILL_KEYWORDS = [
+    "AWS", "Azure", "GCP", "Kubernetes", "Docker", "Linux", "Terraform",
+    "CI/CD", "Jenkins", "GitLab", "Ansible", "Cisco", "Firewall",
+    "Windows Server", "Networking", "Cloud", "DevOps", "Monitoring",
+]
+
 SEEN_JOBS_FILE = "data/seen_jobs.json"
 MAX_SEEN_DAYS = 7
 TELEGRAM_MAX_CHARS = 4096
 MESSAGE_SOFT_LIMIT = 3600
+MAX_EXPERIENCE_YEARS = 2
 
 
 def now_vn():
@@ -90,6 +98,51 @@ def esc_attr(value):
     return html.escape(str(value or ""), quote=True)
 
 
+def normalize_space(value):
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def get_card_lines(card):
+    return [
+        normalize_space(line)
+        for line in card.get_text("\n", strip=True).splitlines()
+        if normalize_space(line)
+    ]
+
+
+def clean_posted(value):
+    return re.sub(r"^posted\s+", "", normalize_space(value), flags=re.IGNORECASE)
+
+
+def extract_salary(lines):
+    for line in lines:
+        lower = line.lower()
+        if "$" in line or "usd" in lower or "vnd" in lower or "negotiable" in lower:
+            return line
+    return "N/A"
+
+
+def extract_location(lines):
+    location_markers = [
+        "ho chi minh", "hcm", "district", "quan ", "binh thanh", "thu duc",
+        "hồ chí minh", "quận", "thủ đức", "remote", "hybrid", "on-site",
+    ]
+    for line in lines:
+        lower = line.lower()
+        if any(marker in lower for marker in location_markers):
+            return line
+    return "HCM"
+
+
+def extract_skills(text):
+    found = []
+    lower_text = text.lower()
+    for skill in SKILL_KEYWORDS:
+        if skill.lower() in lower_text and skill not in found:
+            found.append(skill)
+    return ", ".join(found[:5]) if found else "N/A"
+
+
 def is_senior_job(title):
     title_lower = title.lower()
     return any(kw in title_lower for kw in SENIOR_KEYWORDS)
@@ -113,6 +166,48 @@ def is_too_old(posted_text, max_days=21):
     return False
 
 
+def too_much_experience_reason(text, max_years=MAX_EXPERIENCE_YEARS):
+    normalized = normalize_space(text).lower()
+    word_numbers = {
+        "one": "1",
+        "two": "2",
+        "three": "3",
+        "four": "4",
+        "five": "5",
+        "six": "6",
+        "seven": "7",
+        "eight": "8",
+        "nine": "9",
+        "ten": "10",
+    }
+    for word, number in word_numbers.items():
+        normalized = re.sub(rf"\b{word}\b", number, normalized)
+
+    range_pattern = r"(\d+)\s*[-–]\s*(\d+)\s*(?:years?|yrs?|năm)"
+    for match in re.finditer(range_pattern, normalized):
+        low = int(match.group(1))
+        high = int(match.group(2))
+        if low > max_years or (low == high and high > max_years):
+            return f"requires {low}-{high} years"
+    normalized = re.sub(range_pattern, " ", normalized)
+
+    patterns = [
+        r"(\d+)\s*\+\s*(?:years?|yrs?|năm)",
+        r"(?:at least|minimum|min\.?|from|over|more than)\s*(\d+)\s*(?:years?|yrs?)",
+        r"(?:từ|tren|trên|hon|hơn|ít nhất|it nhat|tối thiểu|toi thieu)\s*(\d+)\s*năm",
+        r"(?:experience|kinh nghiệm|kinh nghiem)[^.;:\n]{0,60}?(\d+)\s*\+?\s*(?:years?|yrs?|năm)",
+        r"(\d+)\s*(?:years?|yrs?|năm)[^.;:\n]{0,40}(?:experience|kinh nghiệm|kinh nghiem)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, normalized)
+        if match:
+            years = int(match.group(1))
+            if years > max_years:
+                return f"requires {years}+ years"
+
+    return ""
+
+
 def is_hcm_job(card):
     card_text = card.get_text(separator=" ").lower()
     if any(kw in card_text for kw in HCM_KEYWORDS):
@@ -122,7 +217,20 @@ def is_hcm_job(card):
     return True
 
 
-def fetch_itviec_jobs(keyword, max_jobs=5):
+def fetch_job_detail_text(link, headers):
+    try:
+        res = requests.get(link, headers=headers, timeout=20)
+        if res.status_code != 200:
+            print(f"  Detail skipped: HTTP {res.status_code} ({link})")
+            return ""
+        soup = BeautifulSoup(res.text, "html.parser")
+        return normalize_space(soup.get_text(" ", strip=True))
+    except Exception as exc:
+        print(f"  Detail skipped: {exc} ({link})")
+        return ""
+
+
+def fetch_itviec_jobs(keyword, max_jobs=8, max_cards=25):
     url = f"https://itviec.com/it-jobs/{keyword}?city_ids%5B%5D=2"
     headers = {
         "User-Agent": (
@@ -144,7 +252,7 @@ def fetch_itviec_jobs(keyword, max_jobs=5):
         print(f"[{keyword}] No job cards found. ITviec markup may have changed.")
 
     jobs = []
-    for card in cards:
+    for card in cards[:max_cards]:
         title_tag = card.select_one("h3[data-search--job-selection-target='jobTitle']")
         if not title_tag:
             continue
@@ -156,7 +264,9 @@ def fetch_itviec_jobs(keyword, max_jobs=5):
 
         slug = card.get("data-search--job-selection-job-slug-value", title)
         posted_tag = card.select_one("span.small-text.text-dark-grey")
-        posted = posted_tag.text.strip().replace("\n", " ") if posted_tag else ""
+        posted = clean_posted(posted_tag.text if posted_tag else "")
+        lines = get_card_lines(card)
+        card_text = normalize_space(card.get_text(" ", strip=True))
 
         if is_senior_job(title):
             print(f"  Skip senior: {title}")
@@ -169,6 +279,16 @@ def fetch_itviec_jobs(keyword, max_jobs=5):
             continue
         if not is_hcm_job(card):
             print(f"  Skip non-HCM: {title}")
+            continue
+        experience_reason = too_much_experience_reason(f"{title} {card_text}")
+        if experience_reason:
+            print(f"  Skip experience: {title} ({experience_reason})")
+            continue
+
+        detail_text = fetch_job_detail_text(link or url, headers)
+        experience_reason = too_much_experience_reason(f"{title} {card_text} {detail_text}")
+        if experience_reason:
+            print(f"  Skip experience: {title} ({experience_reason})")
             continue
 
         company_tag = card.select_one("a.logo-employer-card")
@@ -192,6 +312,9 @@ def fetch_itviec_jobs(keyword, max_jobs=5):
             "company": company,
             "slug": slug,
             "posted": posted,
+            "salary": extract_salary(lines),
+            "location": extract_location(lines),
+            "skills": extract_skills(f"{title} {card_text} {detail_text}"),
             "link": link or url,
         })
 
@@ -270,7 +393,7 @@ def main():
 
     for kw in KEYWORDS:
         try:
-            jobs = fetch_itviec_jobs(kw, max_jobs=5)
+            jobs = fetch_itviec_jobs(kw, max_jobs=8, max_cards=25)
         except Exception as exc:
             print(f"[{kw}] Fetch error: {exc}")
             fetch_errors.append(f"#{kw.upper()}: {esc_text(exc)}")
@@ -295,6 +418,9 @@ def main():
             section += (
                 f"<b>{i}. {esc_text(job['title'])}</b>\n"
                 f"Company: {esc_text(job['company'])}\n"
+                f"Location: {esc_text(job['location'])}\n"
+                f"Salary: {esc_text(job['salary'])}\n"
+                f"Skills: {esc_text(job['skills'])}\n"
                 f"Posted: {esc_text(job['posted'])}\n"
                 f"Link: <a href=\"{esc_attr(job['link'])}\">Xem JD</a>\n\n"
             )
