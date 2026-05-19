@@ -122,21 +122,23 @@ def extract_salary(lines):
     return "N/A"
 
 
-def extract_location(lines):
-    location_markers = [
-        "ho chi minh", "hcm", "district", "quan ", "binh thanh", "thu duc",
-        "hồ chí minh", "quận", "thủ đức", "remote", "hybrid", "on-site",
-    ]
-    for line in lines:
-        lower = line.lower()
-        if any(marker in lower for marker in location_markers):
-            return line
-    return "HCM"
+def extract_location(card_text):
+    lower = card_text.lower()
+    work_modes = []
+    if "remote" in lower:
+        work_modes.append("Remote")
+    if "hybrid" in lower:
+        work_modes.append("Hybrid")
+    if "on-site" in lower or "onsite" in lower:
+        work_modes.append("On-site")
+
+    suffix = f" ({', '.join(work_modes)})" if work_modes else ""
+    return f"Ho Chi Minh{suffix}"
 
 
-def extract_skills(text):
-    found = []
-    lower_text = text.lower()
+def extract_matches(title, keyword):
+    found = [keyword.upper()]
+    lower_text = title.lower()
     for skill in SKILL_KEYWORDS:
         if skill.lower() in lower_text and skill not in found:
             found.append(skill)
@@ -313,8 +315,8 @@ def fetch_itviec_jobs(keyword, max_jobs=8, max_cards=25):
             "slug": slug,
             "posted": posted,
             "salary": extract_salary(lines),
-            "location": extract_location(lines),
-            "skills": extract_skills(f"{title} {card_text} {detail_text}"),
+            "location": extract_location(card_text),
+            "matches": extract_matches(title, keyword),
             "link": link or url,
         })
 
@@ -420,7 +422,7 @@ def main():
                 f"Company: {esc_text(job['company'])}\n"
                 f"Location: {esc_text(job['location'])}\n"
                 f"Salary: {esc_text(job['salary'])}\n"
-                f"Skills: {esc_text(job['skills'])}\n"
+                f"Matched: {esc_text(job['matches'])}\n"
                 f"Posted: {esc_text(job['posted'])}\n"
                 f"Link: <a href=\"{esc_attr(job['link'])}\">Xem JD</a>\n\n"
             )

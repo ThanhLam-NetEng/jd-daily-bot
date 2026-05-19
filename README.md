@@ -23,7 +23,7 @@ This is a small but production-minded automation project. It shows practical Dev
 - Scheduled weekday digest at **08:07 Vietnam time**.
 - Keyword-based ITviec search for `devops`, `network`, `cloud`, `linux`, and `infrastructure`.
 - HCM-focused filtering with senior, irrelevant-role, and high-experience exclusion.
-- Digest fields include company, location, salary, skills, posted time, and JD link.
+- Digest fields include company, normalized location, salary, matched keywords, posted time, and JD link.
 - Telegram delivery with HTML escaping, rate-limit retry, and visible failure logs.
 - Duplicate prevention through `data/seen_jobs.json`.
 - Manual workflow trigger for testing or ad-hoc runs.
@@ -50,7 +50,7 @@ flowchart LR
     C --> D[Parse Cards and Detail Pages]
     D --> E[Filter Location, Seniority,<br/>Experience, and Relevance]
     E --> F[Deduplicate Against<br/>data/seen_jobs.json]
-    F --> G[Format Telegram Digest<br/>Company, Location, Salary, Skills]
+    F --> G[Format Telegram Digest<br/>Company, Location, Salary, Matched Keywords]
     G --> H[Telegram Bot API]
     H --> I[Telegram Chat]
     F --> J[Update seen_jobs.json]
