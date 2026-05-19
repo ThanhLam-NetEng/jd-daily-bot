@@ -10,9 +10,7 @@ Automated job digest for fresher-friendly IT roles in Ho Chi Minh City. The bot 
 
 ## Demo
 
-![Telegram digest preview](docs/demo-placeholder.svg)
-
-> Demo placeholder. Replace this with a real Telegram screenshot after running `Daily JD Fetch` manually from GitHub Actions.
+![Telegram digest preview](docs/demo.PNG)
 
 ## Why This Project Matters
 
@@ -159,7 +157,6 @@ Actions -> Daily JD Fetch -> Run workflow
 
 ## Roadmap
 
-- Add a real Telegram screenshot after the next demo run.
 - Add unit tests for filtering and message formatting.
 - Add structured logging for fetch, filter, send, and state-update steps.
 - Add a dry-run mode for local validation without sending Telegram messages.
