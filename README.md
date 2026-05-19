@@ -6,7 +6,7 @@
 ![Telegram](https://img.shields.io/badge/Delivery-Telegram-26A5E4?logo=telegram&logoColor=white)
 ![Schedule](https://img.shields.io/badge/Schedule-08%3A07%20VN%20Mon--Fri-success)
 
-Automated job digest for fresher-friendly IT roles in Ho Chi Minh City. The bot fetches matching JD listings from ITviec, filters out senior or unrelated roles, excludes postings that clearly require more than 2 years of experience, sends a clean Telegram digest every weekday morning, and remembers recently sent jobs to avoid duplicates.
+Automated job digest for fresher-friendly IT roles in Ho Chi Minh City. The bot fetches matching JD listings from ITviec, filters out senior or unrelated roles, optionally scores each JD against a CV with Claude, sends a clean Telegram digest every weekday morning, and remembers recently sent jobs to avoid duplicates.
 
 ## Demo
 
@@ -22,6 +22,7 @@ This is a small but production-minded automation project. It shows practical Dev
 - Keyword-based ITviec search for `devops`, `network`, `cloud`, `linux`, and `infrastructure`.
 - HCM-focused filtering with senior, irrelevant-role, and high-experience exclusion.
 - Digest fields include company, normalized location, salary, matched keywords, posted time, and JD link.
+- Optional Claude-powered CV matching with score, key skills, strengths, gaps, level, and verdict.
 - Telegram delivery with HTML escaping, rate-limit retry, and visible failure logs.
 - Duplicate prevention through `data/seen_jobs.json`.
 - Manual workflow trigger for testing or ad-hoc runs.
@@ -48,11 +49,15 @@ flowchart LR
     C --> D[Parse Cards and Detail Pages]
     D --> E[Filter Location, Seniority,<br/>Experience, and Relevance]
     E --> F[Deduplicate Against<br/>data/seen_jobs.json]
-    F --> G[Format Telegram Digest<br/>Company, Location, Salary, Matched Keywords]
-    G --> H[Telegram Bot API]
-    H --> I[Telegram Chat]
-    F --> J[Update seen_jobs.json]
-    J --> K[Commit State Back<br/>to GitHub]
+    F --> G{Claude CV Match<br/>enabled?}
+    G -->|Yes| H[Analyze JD vs CV<br/>Claude Messages API]
+    G -->|No| I[Use Rule-Based Summary]
+    H --> J[Format Telegram Digest<br/>Score, Skills, Fit, Gap, Verdict]
+    I --> J
+    J --> K[Telegram Bot API]
+    K --> L[Telegram Chat]
+    J --> M[Update seen_jobs.json]
+    M --> N[Commit State Back<br/>to GitHub]
 ```
 
 ## Repository Structure
@@ -75,6 +80,8 @@ Add these repository secrets before running the workflow:
 | --- | --- | --- |
 | `TELEGRAM_TOKEN` | Yes | Telegram bot token from BotFather. |
 | `TELEGRAM_CHAT_ID` | Yes | Telegram chat, group, or channel ID that receives the digest. |
+| `ANTHROPIC_API_KEY` | No | Enables Claude-powered JD vs CV matching. |
+| `CV_TEXT` | No | Plain-text CV used for Claude matching. Keep this private in GitHub Secrets. |
 
 GitHub path:
 
@@ -121,6 +128,8 @@ Linux/macOS:
 ```bash
 export TELEGRAM_TOKEN="your-token"
 export TELEGRAM_CHAT_ID="your-chat-id"
+export ANTHROPIC_API_KEY="your-anthropic-key" # optional
+export CV_TEXT="your plain-text CV" # optional
 python scripts/fetch_jd.py
 ```
 
@@ -129,6 +138,8 @@ Windows PowerShell:
 ```powershell
 $env:TELEGRAM_TOKEN="your-token"
 $env:TELEGRAM_CHAT_ID="your-chat-id"
+$env:ANTHROPIC_API_KEY="your-anthropic-key" # optional
+$env:CV_TEXT="your plain-text CV" # optional
 python scripts/fetch_jd.py
 ```
 
@@ -146,12 +157,15 @@ Actions -> Daily JD Fetch -> Run workflow
 - Telegram HTML content is escaped before sending to avoid malformed message errors.
 - Rate-limit responses are retried.
 - ITviec detail pages are checked when available so experience requirements hidden outside the search card can still be filtered.
+- Claude matching is capped per run to control API cost and latency.
+- If Claude is not configured or returns an error, the bot falls back to the rule-based digest.
 - `seen_jobs.json` is updated only after Telegram delivery succeeds.
-- The workflow has a 10-minute timeout and concurrency control to avoid overlapping runs.
+- The workflow has a 20-minute timeout and concurrency control to avoid overlapping runs.
 
 ## Security Notes
 
 - Telegram credentials are read from GitHub Actions secrets.
+- Claude API keys and CV text are read from GitHub Actions secrets and are never committed.
 - Local `.env` files and virtual environments are ignored by Git.
 - `data/seen_jobs.json` is intentionally versioned because it is workflow state, not a secret.
 

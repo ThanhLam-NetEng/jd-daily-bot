@@ -12,6 +12,11 @@ from bs4 import BeautifulSoup
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+CV_TEXT = os.environ.get("CV_TEXT", "")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-3-5-haiku-20241022")
+MATCH_THRESHOLD = 60
+MAX_ANALYZE = 8
 
 KEYWORDS = ["devops", "network", "cloud", "linux", "infrastructure"]
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
@@ -138,10 +143,13 @@ def extract_location(card_text):
 
 def extract_matches(title, keyword):
     found = [keyword.upper()]
+    seen = {keyword.lower()}
     lower_text = title.lower()
     for skill in SKILL_KEYWORDS:
-        if skill.lower() in lower_text and skill not in found:
+        skill_key = skill.lower()
+        if skill_key in lower_text and skill_key not in seen:
             found.append(skill)
+            seen.add(skill_key)
     return ", ".join(found[:5]) if found else "N/A"
 
 
@@ -232,6 +240,83 @@ def fetch_job_detail_text(link, headers):
         return ""
 
 
+def parse_claude_json(text):
+    cleaned = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        if not match:
+            raise
+        return json.loads(match.group(0))
+
+
+def analyze_with_claude(title, jd_text, cv_text):
+    if not ANTHROPIC_API_KEY or not cv_text:
+        return None
+
+    prompt = f"""You are a job matching assistant. Analyze this job against the candidate CV.
+
+JOB TITLE: {title}
+
+JOB DESCRIPTION:
+{jd_text[:3000]}
+
+CANDIDATE CV:
+{cv_text[:2000]}
+
+Return ONLY a raw JSON object, no markdown, no explanation:
+{{
+  "match_score": <integer 0-100>,
+  "required_skills": [<top 4 required skills from JD>],
+  "nice_to_have": [<up to 2 nice-to-have skills>],
+  "strength": "<one sentence: candidate strongest fit, max 15 words>",
+  "gap": "<one sentence: main missing skill or 'No significant gap', max 15 words>",
+  "experience_level": "<fresher-friendly / junior / mid-level>",
+  "verdict": "<Worth applying / Consider applying / Skip>"
+}}
+
+Rules:
+- Base ONLY on what is explicitly in the JD and CV, do not invent
+- match_score: 80-100 strong fit, 60-79 decent fit, below 60 weak fit
+- If the JD clearly requires more than 2 years of experience, lower the score
+"""
+
+    try:
+        res = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": CLAUDE_MODEL,
+                "max_tokens": 400,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=30,
+        )
+        if res.status_code != 200:
+            print(f"  Claude API error: HTTP {res.status_code} - {res.text[:300]}")
+            return None
+
+        content = res.json().get("content", [])
+        text = content[0].get("text", "").strip() if content else ""
+        if not text:
+            print("  Claude API returned empty content")
+            return None
+
+        analysis = parse_claude_json(text)
+        score = int(analysis.get("match_score", 0))
+        analysis["match_score"] = max(0, min(100, score))
+        return analysis
+
+    except Exception as exc:
+        print(f"  Claude API exception: {exc}")
+        return None
+
+
 def fetch_itviec_jobs(keyword, max_jobs=8, max_cards=25):
     url = f"https://itviec.com/it-jobs/{keyword}?city_ids%5B%5D=2"
     headers = {
@@ -317,6 +402,7 @@ def fetch_itviec_jobs(keyword, max_jobs=8, max_cards=25):
             "salary": extract_salary(lines),
             "location": extract_location(card_text),
             "matches": extract_matches(title, keyword),
+            "detail_text": detail_text,
             "link": link or url,
         })
 
@@ -392,6 +478,9 @@ def main():
     total = 0
     session_slugs = set()
     new_seen = []
+    analyze_count = 0
+    use_ai = bool(ANTHROPIC_API_KEY and CV_TEXT)
+    print(f"AI analysis: {'ON' if use_ai else 'OFF'}")
 
     for kw in KEYWORDS:
         try:
@@ -416,23 +505,63 @@ def main():
             continue
 
         section = f"<b>{esc_text(kw.upper())}</b>\n\n"
-        for i, job in enumerate(unique_jobs, 1):
-            section += (
-                f"<b>{i}. {esc_text(job['title'])}</b>\n"
-                f"Company: {esc_text(job['company'])}\n"
-                f"Location: {esc_text(job['location'])}\n"
-                f"Salary: {esc_text(job['salary'])}\n"
-                f"Matched: {esc_text(job['matches'])}\n"
-                f"Posted: {esc_text(job['posted'])}\n"
-                f"Link: <a href=\"{esc_attr(job['link'])}\">Xem JD</a>\n\n"
-            )
+        sent_count = 0
+        for job in unique_jobs:
+            analysis = None
+            if use_ai and analyze_count < MAX_ANALYZE:
+                print(f"  AI analyzing: {job['title']}")
+                analysis = analyze_with_claude(
+                    job["title"],
+                    job.get("detail_text", ""),
+                    CV_TEXT,
+                )
+                analyze_count += 1
+                if analysis:
+                    score = analysis.get("match_score", 0)
+                    verdict = analysis.get("verdict", "")
+                    print(f"  AI score: {score}% - {verdict}")
+                    if score < MATCH_THRESHOLD:
+                        print(f"  Below threshold ({score}%), skip")
+                        continue
+
+            sent_count += 1
+            if analysis:
+                score = analysis.get("match_score", 0)
+                filled = round(score / 10)
+                bar = "█" * filled + "░" * (10 - filled)
+                skills = ", ".join(analysis.get("required_skills", [])) or "N/A"
+                level = analysis.get("experience_level", "")
+                verdict = analysis.get("verdict", "")
+                section += (
+                    f"<b>{sent_count}. {esc_text(job['title'])}</b>\n"
+                    f"Company: {esc_text(job['company'])}\n"
+                    f"Match: {score}% [{bar}]\n"
+                    f"Skills: {esc_text(skills)}\n"
+                    f"Fit: {esc_text(analysis.get('strength', ''))}\n"
+                    f"Gap: {esc_text(analysis.get('gap', ''))}\n"
+                    f"Level: {esc_text(level)} · {esc_text(verdict)}\n"
+                    f"Posted: {esc_text(job['posted'])}\n"
+                    f"Link: <a href=\"{esc_attr(job['link'])}\">Xem JD</a>\n\n"
+                )
+            else:
+                section += (
+                    f"<b>{sent_count}. {esc_text(job['title'])}</b>\n"
+                    f"Company: {esc_text(job['company'])}\n"
+                    f"Location: {esc_text(job['location'])}\n"
+                    f"Salary: {esc_text(job['salary'])}\n"
+                    f"Matched: {esc_text(job['matches'])}\n"
+                    f"Posted: {esc_text(job['posted'])}\n"
+                    f"Link: <a href=\"{esc_attr(job['link'])}\">Xem JD</a>\n\n"
+                )
             new_seen.append({
                 "slug": job["slug"],
                 "title": job["title"],
                 "seen_at": now_vn().isoformat(),
             })
-        sections.append(section)
-        total += len(unique_jobs)
+
+        if sent_count:
+            sections.append(section)
+            total += sent_count
 
     if total == 0:
         sections.append("Không có JD mới phù hợp hôm nay.\n\n")
