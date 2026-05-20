@@ -3,6 +3,9 @@ name: Daily JD Fetch
 on:
   schedule:
     - cron: "7 1 * * 1-5" # 08:07 VN (UTC+7), T2-T6; avoid GitHub Actions top-of-hour congestion
+    - cron: "27 1 * * 1-5" # 08:27 VN backup
+    - cron: "47 1 * * 1-5" # 08:47 VN backup
+    - cron: "7 2 * * 1-5" # 09:07 VN backup
   workflow_dispatch:
 
 jobs:
@@ -39,6 +42,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/seen_jobs.json
+          git add data/seen_jobs.json data/digest_runs.json
           git diff --staged --quiet || git commit -m "chore: update seen jobs [skip ci]"
           git push

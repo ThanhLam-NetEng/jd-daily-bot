@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 import pytest
 
@@ -53,6 +54,21 @@ def test_split_messages_splits_large_sections():
     assert len(messages) > 1
     assert all(message.startswith(header) for message in messages)
     assert all(message.endswith(footer) for message in messages)
+
+
+def test_has_digest_run_today(monkeypatch):
+    monkeypatch.setattr(
+        fetch_jd,
+        "now_vn",
+        lambda: datetime(2026, 5, 20, 8, 7, tzinfo=fetch_jd.VN_TZ),
+    )
+
+    assert fetch_jd.has_digest_run_today([
+        {"date": "2026-05-20", "sent_at": "2026-05-20T08:07:00+07:00"},
+    ])
+    assert not fetch_jd.has_digest_run_today([
+        {"date": "2026-05-19", "sent_at": "2026-05-19T08:07:00+07:00"},
+    ])
 
 
 def test_format_rule_job_escapes_html():

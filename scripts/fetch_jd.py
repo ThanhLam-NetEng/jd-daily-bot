@@ -55,7 +55,9 @@ SKILL_KEYWORDS = [
 ]
 
 SEEN_JOBS_FILE = "data/seen_jobs.json"
+DIGEST_RUNS_FILE = "data/digest_runs.json"
 MAX_SEEN_DAYS = 7
+MAX_DIGEST_RUN_DAYS = 30
 TELEGRAM_MAX_CHARS = 4096
 MESSAGE_SOFT_LIMIT = 3600
 MAX_EXPERIENCE_YEARS = 2
@@ -97,6 +99,39 @@ def save_seen_jobs(seen_jobs):
     os.makedirs("data", exist_ok=True)
     with open(SEEN_JOBS_FILE, "w", encoding="utf-8") as f:
         json.dump(seen_jobs, f, ensure_ascii=False, indent=2)
+
+
+def load_digest_runs():
+    try:
+        with open(DIGEST_RUNS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return []
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{DIGEST_RUNS_FILE} is not valid JSON: {exc}") from exc
+
+    cutoff = (now_vn() - timedelta(days=MAX_DIGEST_RUN_DAYS)).date().isoformat()
+    return [run for run in data if run.get("date", "") > cutoff]
+
+
+def has_digest_run_today(digest_runs):
+    today = now_vn().date().isoformat()
+    return any(run.get("date") == today for run in digest_runs)
+
+
+def save_digest_runs(digest_runs):
+    os.makedirs("data", exist_ok=True)
+    with open(DIGEST_RUNS_FILE, "w", encoding="utf-8") as f:
+        json.dump(digest_runs, f, ensure_ascii=False, indent=2)
+
+
+def mark_digest_run(digest_runs, sent_count):
+    digest_runs.append({
+        "date": now_vn().date().isoformat(),
+        "sent_at": now_vn().isoformat(),
+        "job_count": sent_count,
+    })
+    save_digest_runs(digest_runs)
 
 
 def esc_text(value):
@@ -502,6 +537,11 @@ def main():
     require_env()
 
     today = now_vn().strftime("%d/%m/%Y")
+    digest_runs = load_digest_runs()
+    if not DRY_RUN and has_digest_run_today(digest_runs):
+        print("Digest already sent today; skipping backup run.")
+        return
+
     seen_jobs = load_seen_jobs()
     seen_slugs = {j["slug"] for j in seen_jobs if "slug" in j}
 
@@ -625,6 +665,7 @@ def main():
 
     all_seen = seen_jobs + new_seen
     save_seen_jobs(all_seen)
+    mark_digest_run(digest_runs, total)
     print(f"Saved {len(all_seen)} total seen jobs")
 
     if fetch_errors and total == 0:
