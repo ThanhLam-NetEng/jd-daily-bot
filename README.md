@@ -138,6 +138,19 @@ GitHub Actions cron runs in UTC. Vietnam is UTC+7, so the primary workflow uses:
 
 That maps to **08:07 Vietnam time, Monday to Friday**. Backup schedules also run at **08:27, 08:47, and 09:07 Vietnam time**. The bot records successful daily sends in `data/digest_runs.json`, so backup runs exit without sending another Telegram digest once the day has already been handled.
 
+For more reliable timing, an external scheduler such as cron-job.org can trigger the same workflow with a `repository_dispatch` event:
+
+```http
+POST https://api.github.com/repos/ThanhLam-NetEng/jd-daily-bot/dispatches
+Authorization: Bearer YOUR_GITHUB_TOKEN
+Accept: application/vnd.github+json
+Content-Type: application/json
+
+{"event_type":"daily-jd-fetch"}
+```
+
+Use a fine-grained GitHub token scoped to this repository with **Contents: Read and write** permission. Set cron-job.org to call that endpoint at **08:07 Vietnam time, Monday to Friday**. Keep the GitHub schedules as backup; `data/digest_runs.json` prevents duplicate Telegram digests.
+
 ## Local Setup
 
 ```bash
