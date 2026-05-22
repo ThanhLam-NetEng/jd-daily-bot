@@ -6,7 +6,7 @@
 ![Tests](https://img.shields.io/badge/Tests-pytest-0A9EDC)
 ![Claude](https://img.shields.io/badge/AI-Claude%20Haiku%204.5-D97757)
 ![Telegram](https://img.shields.io/badge/Delivery-Telegram-26A5E4?logo=telegram&logoColor=white)
-![Schedule](https://img.shields.io/badge/Schedule-08%3A07%20VN%20%2B%20backups-success)
+![Schedule](https://img.shields.io/badge/Schedule-cron--job.org%2008%3A07%20VN-success)
 
 AI-assisted job matching bot for fresher-friendly IT roles in Ho Chi Minh City. The bot fetches ITviec job listings, filters noisy results, reads full JD pages, optionally scores each JD against a private CV with Claude, and sends a concise Telegram digest every weekday morning.
 
@@ -20,7 +20,7 @@ This project is built like a small production automation system, not a one-off s
 
 ## Features
 
-- Runs automatically at **08:07 Vietnam time, Monday to Friday**, with guarded backup runs at 08:27, 08:47, and 09:07.
+- Runs automatically at **08:07 Vietnam time, Monday to Friday** via cron-job.org, with guarded GitHub Actions backup schedules.
 - Searches ITviec for DevOps, Network, Cloud, Linux, and Infrastructure roles.
 - Filters by location, seniority, relevance, posting age, duplicate history, and experience requirements.
 - Fetches full JD pages to catch requirements that are not visible in search cards.
@@ -62,24 +62,27 @@ Link: Xem JD
 
 ```mermaid
 flowchart TD
-    A[GitHub Actions<br/>schedule + manual dispatch] --> B[Install dependencies]
-    B --> C[Run scripts/fetch_jd.py]
-    C --> D[Fetch ITviec search cards]
-    D --> E[Parse title, company, posted time, link]
-    E --> F[Rule filters<br/>location, seniority, relevance, age]
-    F --> G[Fetch full JD detail page]
-    G --> H[Experience filter<br/>EN + VI patterns]
-    H --> I[Deduplicate with seen_jobs.json]
-    I --> J{Claude enabled?}
-    J -->|Yes| K[Claude Messages API<br/>JD + CV -> JSON analysis]
-    J -->|No| L[Rule-based summary]
-    K --> M[Score threshold filter]
-    L --> N[Telegram formatter]
-    M --> N
-    N --> O[Telegram Bot API]
-    O --> P[Telegram chat]
-    P --> Q[Persist seen_jobs.json]
-    Q --> R[Commit state back to GitHub]
+    A[cron-job.org<br/>08:07 VN Mon-Fri] --> B[GitHub repository_dispatch]
+    C[GitHub Actions<br/>schedule backups + manual dispatch] --> D[Install dependencies]
+    B --> D
+    D --> E[Run scripts/fetch_jd.py]
+    E --> F[Daily guard<br/>digest_runs.json]
+    F --> G[Fetch ITviec search cards]
+    G --> H[Parse title, company, posted time, link]
+    H --> I[Rule filters<br/>location, seniority, relevance, age]
+    I --> J[Fetch full JD detail page]
+    J --> K[Experience filter<br/>EN + VI patterns]
+    K --> L[Deduplicate with seen_jobs.json]
+    L --> M{Claude enabled?}
+    M -->|Yes| N[Claude Messages API<br/>JD + CV -> JSON analysis]
+    M -->|No| O[Rule-based summary]
+    N --> P[Score threshold filter]
+    O --> Q[Telegram formatter]
+    P --> Q
+    Q --> R[Telegram Bot API]
+    R --> S[Telegram chat]
+    S --> T[Persist seen_jobs.json<br/>and digest_runs.json]
+    T --> U[Commit state back to GitHub]
 ```
 
 ## Filtering Strategy
@@ -98,10 +101,10 @@ flowchart TD
 
 ```text
 .
-|-- .github/workflows/fetch_jd.yml   # Scheduled GitHub Actions workflow
+|-- .github/workflows/fetch_jd.yml   # Dispatch, manual, and backup scheduled workflow
 |-- .github/workflows/test.yml       # CI workflow for compile and pytest checks
 |-- data/seen_jobs.json              # Lightweight state for duplicate prevention
-|-- data/digest_runs.json            # Daily send guard for backup schedules
+|-- data/digest_runs.json            # Daily send guard across all triggers
 |-- docs/demo.PNG                    # Telegram demo screenshot
 |-- docs/demo-placeholder.svg        # Earlier placeholder asset
 |-- scripts/fetch_jd.py              # Fetch, filter, analyze, format, and send logic
@@ -130,15 +133,7 @@ Settings -> Secrets and variables -> Actions -> New repository secret
 
 ## Schedule
 
-GitHub Actions cron runs in UTC. Vietnam is UTC+7, so the primary workflow uses:
-
-```yaml
-7 1 * * 1-5
-```
-
-That maps to **08:07 Vietnam time, Monday to Friday**. Backup schedules also run at **08:27, 08:47, and 09:07 Vietnam time**. The bot records successful daily sends in `data/digest_runs.json`, so backup runs exit without sending another Telegram digest once the day has already been handled.
-
-For more reliable timing, an external scheduler such as cron-job.org can trigger the same workflow with a `repository_dispatch` event:
+The primary production trigger is cron-job.org. It calls GitHub's `repository_dispatch` API at **08:07 Vietnam time, Monday to Friday**:
 
 ```http
 POST https://api.github.com/repos/ThanhLam-NetEng/jd-daily-bot/dispatches
@@ -149,7 +144,24 @@ Content-Type: application/json
 {"event_type":"daily-jd-fetch"}
 ```
 
-Use a fine-grained GitHub token scoped to this repository with **Contents: Read and write** permission. Set cron-job.org to call that endpoint at **08:07 Vietnam time, Monday to Friday**. Keep the GitHub schedules as backup; `data/digest_runs.json` prevents duplicate Telegram digests.
+Use a fine-grained GitHub token scoped to this repository with **Contents: Read and write** permission. If cron-job.org uses UTC, the cron expression is:
+
+```cron
+7 1 * * 1-5
+```
+
+That maps to **08:07 Vietnam time** because Vietnam is UTC+7.
+
+GitHub Actions also keeps fallback schedules in UTC:
+
+```yaml
+7 1 * * 1-5
+27 1 * * 1-5
+47 1 * * 1-5
+7 2 * * 1-5
+```
+
+Those map to **08:07, 08:27, 08:47, and 09:07 Vietnam time**. The bot records successful daily sends in `data/digest_runs.json`, so backup runs exit without sending another Telegram digest once the day has already been handled. The cron-job.org dispatch path was verified in production on **22/05/2026 08:07 VN**.
 
 ## Local Setup
 
@@ -238,6 +250,7 @@ The `Tests` GitHub Actions workflow runs on pushes, pull requests, and manual di
 - If Claude is not configured or returns an error, the bot falls back to the rule-based digest.
 - Dry-run mode skips Telegram delivery and `seen_jobs.json` updates.
 - `seen_jobs.json` is updated only after Telegram delivery succeeds.
+- `digest_runs.json` prevents duplicate daily Telegram digests across cron-job.org, manual runs, and GitHub backup schedules.
 - The workflow has a 20-minute timeout and concurrency control to avoid overlapping runs.
 
 ## Security And Cost
