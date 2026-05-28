@@ -1,7 +1,9 @@
 import html
 import json
+import logging
 import os
 import re
+import sys
 import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -61,6 +63,38 @@ MAX_DIGEST_RUN_DAYS = 30
 TELEGRAM_MAX_CHARS = 4096
 MESSAGE_SOFT_LIMIT = 3600
 MAX_EXPERIENCE_YEARS = 2
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record):
+        payload = {
+            "ts": datetime.now(VN_TZ).isoformat(),
+            "level": record.levelname,
+            "event": getattr(record, "event", record.getMessage()),
+        }
+        payload.update(getattr(record, "fields", {}))
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+def configure_logging():
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonFormatter())
+
+    logger = logging.getLogger("jd_daily_bot")
+    logger.handlers.clear()
+    logger.addHandler(handler)
+    logger.setLevel(os.environ.get("LOG_LEVEL", "INFO").upper())
+    logger.propagate = False
+    return logger
+
+
+LOGGER = configure_logging()
+
+
+def log_event(level, event, **fields):
+    LOGGER.log(level, event, extra={"event": event, "fields": fields})
 
 
 def now_vn():
@@ -210,8 +244,8 @@ def is_too_old(posted_text, max_days=21):
         if "day" in text:
             days = int("".join(filter(str.isdigit, text)))
             return days > max_days
-    except Exception:
-        pass
+    except (TypeError, ValueError):
+        return False
     return False
 
 
@@ -270,12 +304,12 @@ def fetch_job_detail_text(link, headers):
     try:
         res = requests.get(link, headers=headers, timeout=20)
         if res.status_code != 200:
-            print(f"  Detail skipped: HTTP {res.status_code} ({link})")
+            log_event(logging.WARNING, "job_detail_skipped", status_code=res.status_code, link=link)
             return ""
         soup = BeautifulSoup(res.text, "html.parser")
         return normalize_space(soup.get_text(" ", strip=True))
     except Exception as exc:
-        print(f"  Detail skipped: {exc} ({link})")
+        log_event(logging.WARNING, "job_detail_skipped", error=str(exc), link=link)
         return ""
 
 
@@ -337,13 +371,18 @@ Rules:
             timeout=30,
         )
         if res.status_code != 200:
-            print(f"  Claude API error: HTTP {res.status_code} - {res.text[:300]}")
+            log_event(
+                logging.WARNING,
+                "claude_api_error",
+                status_code=res.status_code,
+                response=res.text[:300],
+            )
             return None
 
         content = res.json().get("content", [])
         text = content[0].get("text", "").strip() if content else ""
         if not text:
-            print("  Claude API returned empty content")
+            log_event(logging.WARNING, "claude_empty_content")
             return None
 
         analysis = parse_claude_json(text)
@@ -352,7 +391,7 @@ Rules:
         return analysis
 
     except Exception as exc:
-        print(f"  Claude API exception: {exc}")
+        log_event(logging.WARNING, "claude_exception", error=str(exc))
         return None
 
 
@@ -372,10 +411,10 @@ def fetch_itviec_jobs(keyword, max_jobs=8, max_cards=25):
 
     soup = BeautifulSoup(res.text, "html.parser")
     cards = soup.select("div.job-card")
-    print(f"[{keyword}] Total cards: {len(cards)}")
+    log_event(logging.INFO, "itviec_cards_fetched", keyword=keyword, total_cards=len(cards))
 
     if not cards:
-        print(f"[{keyword}] No job cards found. ITviec markup may have changed.")
+        log_event(logging.WARNING, "itviec_no_cards", keyword=keyword)
 
     jobs = []
     for card in cards[:max_cards]:
@@ -395,26 +434,40 @@ def fetch_itviec_jobs(keyword, max_jobs=8, max_cards=25):
         card_text = normalize_space(card.get_text(" ", strip=True))
 
         if is_senior_job(title):
-            print(f"  Skip senior: {title}")
+            log_event(logging.INFO, "job_skipped", reason="senior", keyword=keyword, title=title)
             continue
         if is_irrelevant_job(title):
-            print(f"  Skip irrelevant: {title}")
+            log_event(logging.INFO, "job_skipped", reason="irrelevant", keyword=keyword, title=title)
             continue
         if is_too_old(posted):
-            print(f"  Skip old job: {title} ({posted})")
+            log_event(logging.INFO, "job_skipped", reason="old", keyword=keyword, title=title, posted=posted)
             continue
         if not is_hcm_job(card):
-            print(f"  Skip non-HCM: {title}")
+            log_event(logging.INFO, "job_skipped", reason="non_hcm", keyword=keyword, title=title)
             continue
         experience_reason = too_much_experience_reason(f"{title} {card_text}")
         if experience_reason:
-            print(f"  Skip experience: {title} ({experience_reason})")
+            log_event(
+                logging.INFO,
+                "job_skipped",
+                reason="experience",
+                keyword=keyword,
+                title=title,
+                detail=experience_reason,
+            )
             continue
 
         detail_text = fetch_job_detail_text(link or url, headers)
         experience_reason = too_much_experience_reason(f"{title} {card_text} {detail_text}")
         if experience_reason:
-            print(f"  Skip experience: {title} ({experience_reason})")
+            log_event(
+                logging.INFO,
+                "job_skipped",
+                reason="experience",
+                keyword=keyword,
+                title=title,
+                detail=experience_reason,
+            )
             continue
 
         company_tag = card.select_one("a.logo-employer-card")
@@ -465,14 +518,20 @@ def send_telegram(message):
 
     for attempt in range(3):
         res = requests.post(url, json=payload, timeout=20)
-        print("Telegram response:", res.status_code, res.text[:500])
+        log_event(
+            logging.INFO,
+            "telegram_response",
+            status_code=res.status_code,
+            response=res.text[:500],
+            attempt=attempt + 1,
+        )
 
         if res.status_code == 429 and attempt < 2:
             retry_after = 5
             try:
                 retry_after = int(res.json().get("parameters", {}).get("retry_after", retry_after))
             except ValueError:
-                pass
+                log_event(logging.WARNING, "telegram_retry_after_invalid", fallback_seconds=retry_after)
             time.sleep(retry_after)
             continue
 
@@ -539,14 +598,19 @@ def main():
     today = now_vn().strftime("%d/%m/%Y")
     digest_runs = load_digest_runs()
     if not DRY_RUN and has_digest_run_today(digest_runs):
-        print("Digest already sent today; skipping backup run.")
+        log_event(logging.INFO, "digest_already_sent")
         return
 
     seen_jobs = load_seen_jobs()
     seen_slugs = {j["slug"] for j in seen_jobs if "slug" in j}
 
-    print(f"Loaded {len(seen_slugs)} seen slugs from history")
-    print(f"Dry run: {'ON' if DRY_RUN else 'OFF'}")
+    log_event(
+        logging.INFO,
+        "run_started",
+        seen_slugs=len(seen_slugs),
+        dry_run=DRY_RUN,
+        keywords=KEYWORDS,
+    )
 
     header = f"<b>JD HCM - {today}</b>\n{'─' * 30}\n\n"
     footer = "<i>Daily JD Fetch · 08:07 · T2-T6</i>"
@@ -557,13 +621,13 @@ def main():
     new_seen = []
     analyze_count = 0
     use_ai = bool(ANTHROPIC_API_KEY and CV_TEXT)
-    print(f"AI analysis: {'ON' if use_ai else 'OFF'}")
+    log_event(logging.INFO, "ai_analysis_configured", enabled=use_ai, model=CLAUDE_MODEL if use_ai else None)
 
     for kw in KEYWORDS:
         try:
             jobs = fetch_itviec_jobs(kw, max_jobs=8, max_cards=25)
         except Exception as exc:
-            print(f"[{kw}] Fetch error: {exc}")
+            log_event(logging.ERROR, "keyword_fetch_error", keyword=kw, error=str(exc))
             fetch_errors.append(f"#{kw.upper()}: {esc_text(exc)}")
             continue
 
@@ -571,7 +635,7 @@ def main():
         for job in jobs:
             slug = job["slug"]
             if slug in seen_slugs or slug in session_slugs:
-                print(f"  Already seen: {job['title']}")
+                log_event(logging.INFO, "job_skipped", reason="already_seen", keyword=kw, title=job["title"])
                 continue
             session_slugs.add(slug)
             unique_jobs.append(job)
@@ -586,7 +650,7 @@ def main():
         for job in unique_jobs:
             analysis = None
             if use_ai and analyze_count < MAX_ANALYZE:
-                print(f"  AI analyzing: {job['title']}")
+                log_event(logging.INFO, "ai_analysis_started", keyword=kw, title=job["title"])
                 analysis = analyze_with_claude(
                     job["title"],
                     job.get("detail_text", ""),
@@ -596,9 +660,24 @@ def main():
                 if analysis:
                     score = analysis.get("match_score", 0)
                     verdict = analysis.get("verdict", "")
-                    print(f"  AI score: {score}% - {verdict}")
+                    log_event(
+                        logging.INFO,
+                        "ai_analysis_completed",
+                        keyword=kw,
+                        title=job["title"],
+                        score=score,
+                        verdict=verdict,
+                    )
                     if score < MATCH_THRESHOLD:
-                        print(f"  Below threshold ({score}%), skip")
+                        log_event(
+                            logging.INFO,
+                            "job_skipped",
+                            reason="below_ai_threshold",
+                            keyword=kw,
+                            title=job["title"],
+                            score=score,
+                            threshold=MATCH_THRESHOLD,
+                        )
                         continue
 
             sent_count += 1
@@ -655,7 +734,7 @@ def main():
     messages = split_messages(header, sections, footer)
 
     if DRY_RUN:
-        print("DRY_RUN enabled: not sending Telegram and not updating seen jobs.")
+        log_event(logging.INFO, "dry_run_completed", messages=len(messages), total_jobs=total)
         for index, message in enumerate(messages, 1):
             print(f"\n--- DRY RUN MESSAGE {index} ---\n{message}")
         return
@@ -666,7 +745,7 @@ def main():
     all_seen = seen_jobs + new_seen
     save_seen_jobs(all_seen)
     mark_digest_run(digest_runs, total)
-    print(f"Saved {len(all_seen)} total seen jobs")
+    log_event(logging.INFO, "run_completed", total_jobs=total, total_seen_jobs=len(all_seen))
 
     if fetch_errors and total == 0:
         raise RuntimeError("All fetched job results were empty or failed. Check ITviec responses above.")

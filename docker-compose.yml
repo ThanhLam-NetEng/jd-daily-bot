@@ -1,0 +1,11 @@
+services:
+  jd-daily-bot:
+    build: .
+    env_file:
+      - .env
+    environment:
+      DRY_RUN: ${DRY_RUN:-1}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/app/data
+    restart: "no"

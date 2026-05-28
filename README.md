@@ -101,6 +101,10 @@ flowchart TD
 
 ```text
 .
+|-- Dockerfile                         # Container image for local or scheduled execution
+|-- docker-compose.yml                 # Local container runner with env_file support
+|-- .env.example                       # Safe template for local environment variables
+|-- Makefile                           # Common local commands
 |-- .github/workflows/fetch_jd.yml   # Dispatch, manual, and backup scheduled workflow
 |-- .github/workflows/test.yml       # CI workflow for compile and pytest checks
 |-- data/seen_jobs.json              # Lightweight state for duplicate prevention
@@ -183,6 +187,18 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+Copy the local environment template before running outside GitHub Actions:
+
+```bash
+cp .env.example .env
+```
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
 ## Run Locally
 
 Rule-based mode:
@@ -191,6 +207,21 @@ Rule-based mode:
 export TELEGRAM_TOKEN="your-token"
 export TELEGRAM_CHAT_ID="your-chat-id"
 python scripts/fetch_jd.py
+```
+
+Make shortcuts:
+
+```bash
+make install
+make test
+make dry-run
+make security
+```
+
+Docker:
+
+```bash
+docker compose run --rm jd-daily-bot
 ```
 
 Dry-run mode:
@@ -239,6 +270,11 @@ pytest -q
 ```
 
 The `Tests` GitHub Actions workflow runs on pushes, pull requests, and manual dispatches. It compiles `scripts/fetch_jd.py` and runs the pytest suite.
+
+The same workflow also runs lightweight security checks:
+
+- `pip-audit` for installed Python dependency vulnerabilities.
+- `bandit` for common Python source security issues under `scripts/`.
 
 ## Reliability
 
