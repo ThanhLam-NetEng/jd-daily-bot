@@ -1,10 +1,5 @@
 [
   {
-    "slug": "it-soc-tier-1-networking-siem-windows-linux-cong-ty-co-phan-an-ninh-mang-thd-4523",
-    "title": "Security Operations Center (IT SOC, Networking, Linux)",
-    "seen_at": "2026-06-01T08:07:37.635547+07:00"
-  },
-  {
     "slug": "good-english-devops-engineer-intern-innotech-vietnam-corporation-4500",
     "title": "(Good English) DevOps Engineer Intern",
     "seen_at": "2026-06-02T08:07:40.599642+07:00"
@@ -13,5 +8,15 @@
     "slug": "network-system-administrator-phu-hung-securities-phs-3643",
     "title": "Network & System Administrator",
     "seen_at": "2026-06-05T08:07:31.815799+07:00"
+  },
+  {
+    "slug": "devops-engineer-nginx-docker-kubernetes-nexsoft-technology-4522",
+    "title": "DevOps Engineer (Nginx,Docker, Kubernetes)",
+    "seen_at": "2026-06-09T08:07:26.493908+07:00"
+  },
+  {
+    "slug": "devops-engineer-aws-cloud-cubicstack-solutions-4011",
+    "title": "DevOps Engineer (AWS, Cloud)",
+    "seen_at": "2026-06-09T08:07:32.775074+07:00"
   }
 ]
